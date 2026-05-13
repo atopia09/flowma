@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focusflow — Pomodoro Timer</title>
+    <meta name="description" content="A minimal, beautiful Pomodoro timer with ambient sounds and customizable backgrounds.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
+</head>
+<body>
+    <!-- Background Layer -->
+    <div id="bg-container">
+        <div id="bg-current" class="bg-layer"></div>
+        <div id="bg-next" class="bg-layer"></div>
+        <div id="bg-overlay" class="bg-layer"></div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app">
+        <!-- Timer Section -->
+        <section id="timer-section">
+            <div class="timer-card" id="timer-card">
+                <!-- Mode Tabs -->
+                <div class="mode-tabs" id="mode-tabs">
+                    <button class="mode-tab active" data-mode="focus" id="tab-focus">Focus</button>
+                    <button class="mode-tab" data-mode="short-break" id="tab-short-break">Short Break</button>
+                    <button class="mode-tab" data-mode="long-break" id="tab-long-break">Long Break</button>
+                    <div class="tab-indicator" id="tab-indicator"></div>
+                </div>
+
+                <!-- Timer Ring -->
+                <div class="timer-ring-wrapper" id="timer-ring-wrapper">
+                    <svg class="timer-ring" viewBox="0 0 300 300">
+                        <defs>
+                            <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="var(--accent)" />
+                                <stop offset="100%" stop-color="var(--accent-secondary)" />
+                            </linearGradient>
+                        </defs>
+                        <circle class="ring-track" cx="150" cy="150" r="136" />
+                        <circle class="ring-progress" cx="150" cy="150" r="136" id="ring-progress" />
+                    </svg>
+                    <div class="timer-display">
+                        <span id="timer-time" class="timer-time">25:00</span>
+                        <span id="timer-label" class="timer-label">focus time</span>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="timer-controls">
+                    <button class="ctrl-btn" id="btn-reset" title="Reset Timer" aria-label="Reset Timer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                            <path d="M3 3v5h5"/>
+                        </svg>
+                    </button>
+                    <button class="ctrl-btn primary" id="btn-start" title="Start Timer" aria-label="Start Timer">
+                        <svg viewBox="0 0 24 24" fill="currentColor" id="icon-play">
+                            <polygon points="6,3 20,12 6,21"/>
+                        </svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor" id="icon-pause" class="hidden">
+                            <rect x="5" y="3" width="4" height="18" rx="1"/>
+                            <rect x="15" y="3" width="4" height="18" rx="1"/>
+                        </svg>
+                    </button>
+                    <button class="ctrl-btn" id="btn-skip" title="Skip to Next" aria-label="Skip to Next">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="5,4 15,12 5,20"/>
+                            <line x1="19" y1="5" x2="19" y2="19"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Session Indicator -->
+                <div class="session-indicator" id="session-indicator"></div>
+            </div>
+        </section>
+
+        <!-- Bottom Navigation -->
+        <nav id="bottom-nav">
+            <button class="nav-btn active" data-panel="timer" id="nav-timer" aria-label="Timer">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12,6 12,12 16,14"/>
+                </svg>
+                <span>Timer</span>
+            </button>
+            <button class="nav-btn" data-panel="sounds" id="nav-sounds" aria-label="Sounds">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M9 18V5l12-2v13"/>
+                    <circle cx="6" cy="18" r="3"/>
+                    <circle cx="18" cy="16" r="3"/>
+                </svg>
+                <span>Sounds</span>
+            </button>
+            <button class="nav-btn" data-panel="scenes" id="nav-scenes" aria-label="Scenes">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <circle cx="9" cy="9" r="2"/>
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                </svg>
+                <span>Scenes</span>
+            </button>
+            <button class="nav-btn" data-panel="settings" id="nav-settings" aria-label="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="4" y1="21" x2="4" y2="14"/>
+                    <line x1="4" y1="10" x2="4" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12" y2="3"/>
+                    <line x1="20" y1="21" x2="20" y2="16"/>
+                    <line x1="20" y1="12" x2="20" y2="3"/>
+                    <line x1="1" y1="14" x2="7" y2="14"/>
+                    <line x1="9" y1="8" x2="15" y2="8"/>
+                    <line x1="17" y1="16" x2="23" y2="16"/>
+                </svg>
+                <span>Settings</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Panel Backdrop -->
+    <div id="panel-backdrop" class="panel-backdrop"></div>
+
+    <!-- Slide-up Panels -->
+    <div id="panel-container" class="panel-container">
+        <div class="panel-handle" id="panel-handle"><span></span></div>
+
+        <!-- Sounds Panel -->
+        <div id="panel-sounds" class="panel-page hidden">
+            <div class="panel-header">
+                <h2>Ambient Sounds</h2>
+                <div class="master-volume">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    </svg>
+                    <input type="range" class="vol-slider" id="master-volume" min="0" max="100" value="60">
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="sounds-grid" id="sounds-grid"></div>
+            </div>
+        </div>
+
+        <!-- Scenes Panel -->
+        <div id="panel-scenes" class="panel-page hidden">
+            <div class="panel-header">
+                <h2>Background Scenes</h2>
+            </div>
+            <div class="panel-body">
+                <div class="scenes-grid" id="scenes-grid"></div>
+                <button class="upload-btn" id="btn-upload-bg">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17,8 12,3 7,8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <span>Upload Custom Background</span>
+                </button>
+                <input type="file" id="bg-file-input" accept="image/*" class="hidden">
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="panel-settings" class="panel-page hidden">
+            <div class="panel-header">
+                <h2>Timer Settings</h2>
+            </div>
+            <div class="panel-body">
+                <div class="settings-group" id="setting-focus">
+                    <label class="setting-label">
+                        <span>Focus Duration</span>
+                        <span class="setting-value" id="val-focus">25 min</span>
+                    </label>
+                    <input type="range" class="setting-range" id="range-focus" min="1" max="90" value="25">
+                </div>
+                <div class="settings-group" id="setting-short-break">
+                    <label class="setting-label">
+                        <span>Short Break</span>
+                        <span class="setting-value" id="val-short-break">5 min</span>
+                    </label>
+                    <input type="range" class="setting-range" id="range-short-break" min="1" max="30" value="5">
+                </div>
+                <div class="settings-group" id="setting-long-break">
+                    <label class="setting-label">
+                        <span>Long Break</span>
+                        <span class="setting-value" id="val-long-break">15 min</span>
+                    </label>
+                    <input type="range" class="setting-range" id="range-long-break" min="1" max="60" value="15">
+                </div>
+                <div class="settings-group" id="setting-sessions">
+                    <label class="setting-label">
+                        <span>Sessions Before Long Break</span>
+                        <span class="setting-value" id="val-sessions">4</span>
+                    </label>
+                    <input type="range" class="setting-range" id="range-sessions" min="2" max="8" value="4">
+                </div>
+                <div class="settings-divider"></div>
+                <div class="settings-group toggle-group" id="setting-auto-break">
+                    <span class="setting-toggle-label">Auto-start Breaks</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="toggle-auto-break" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-group toggle-group" id="setting-auto-focus">
+                    <span class="setting-toggle-label">Auto-start Focus</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="toggle-auto-focus">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-group toggle-group" id="setting-notification">
+                    <span class="setting-toggle-label">Notification Sound</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="toggle-notification" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
