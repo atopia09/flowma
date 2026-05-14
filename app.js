@@ -64,11 +64,78 @@ const DEFAULT_SETTINGS = {
     sessionsBeforeLongBreak: 4,
     autoStartBreak: true,
     autoStartFocus: false,
+    autoHideNav: false,
     notificationSound: true,
     masterVolume: 60,
+    uiOpacity: 100,
+    uiBlur: 40,
+    bgDimming: 50,
+    minimalMode: false,
     activeScene: 'minimal-dark',
     soundStates: {},
 };
+
+// ============================================================
+// DB Manager
+// ============================================================
+class DBManager {
+    constructor() {
+        this.dbName = 'focusflow-db';
+        this.dbVersion = 1;
+        this.storeName = 'files';
+        this.db = null;
+    }
+
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            request.onsuccess = (e) => {
+                this.db = e.target.result;
+                resolve();
+            };
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async saveFile(id, file) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject('DB not initialized');
+            const tx = this.db.transaction([this.storeName], 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            const request = store.put(file, id);
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async getFile(id) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject('DB not initialized');
+            const tx = this.db.transaction([this.storeName], 'readonly');
+            const store = tx.objectStore(this.storeName);
+            const request = store.get(id);
+            request.onsuccess = (e) => resolve(e.target.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async deleteFile(id) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject('DB not initialized');
+            const tx = this.db.transaction([this.storeName], 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            const request = store.delete(id);
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+}
 
 // ============================================================
 // Sound Engine — Procedural Ambient Audio via Web Audio API
@@ -281,32 +348,38 @@ class Timer {
 // Background Manager
 // ============================================================
 class BackgroundManager {
-    constructor() {
+    constructor(dbManager) {
         this.currentScene = null;
         this.bgCurrent = document.getElementById('bg-current');
         this.bgNext = document.getElementById('bg-next');
-        this.customScenes = this._loadCustomScenes();
+        this.customScenes = [];
+        this.dbManager = dbManager;
+    }
+
+    async init() {
+        this.customScenes = await this._loadCustomScenes();
     }
 
     setScene(scene) {
-        const bgValue = scene.type === 'image'
-            ? `url('${scene.value}')`
-            : scene.value;
-
         // Crossfade
-        this.bgNext.style.backgroundImage = bgValue;
-        this.bgNext.style.background = scene.type === 'gradient' ? scene.value : '';
-        
-        if (scene.type === 'gradient') {
-            this.bgNext.classList.add('animated-gradient');
-        } else {
-            this.bgNext.classList.remove('animated-gradient');
-        }
+        this.bgNext.innerHTML = '';
+        this.bgNext.style.backgroundImage = '';
+        this.bgNext.style.background = '';
+        this.bgNext.classList.remove('animated-gradient');
 
-        if (scene.type === 'image') {
+        if (scene.type === 'video') {
+            const vid = document.createElement('video');
+            vid.src = scene.blobUrl || scene.value;
+            vid.autoplay = true; vid.loop = true; vid.muted = true; vid.playsInline = true;
+            vid.style.width = '100%'; vid.style.height = '100%'; vid.style.objectFit = 'cover';
+            this.bgNext.appendChild(vid);
+        } else if (scene.type === 'image') {
             this.bgNext.style.backgroundImage = `url('${scene.value}')`;
             this.bgNext.style.backgroundSize = 'cover';
             this.bgNext.style.backgroundPosition = 'center';
+        } else {
+            this.bgNext.style.background = scene.value;
+            this.bgNext.classList.add('animated-gradient');
         }
 
         // Fade in next
@@ -314,32 +387,46 @@ class BackgroundManager {
 
         setTimeout(() => {
             // Copy to current
-            if (scene.type === 'image') {
+            this.bgCurrent.innerHTML = '';
+            this.bgCurrent.style.background = '';
+            this.bgCurrent.style.backgroundImage = '';
+            this.bgCurrent.classList.remove('animated-gradient');
+
+            if (scene.type === 'video') {
+                const vid = document.createElement('video');
+                vid.src = scene.blobUrl || scene.value;
+                vid.autoplay = true; vid.loop = true; vid.muted = true; vid.playsInline = true;
+                vid.style.width = '100%'; vid.style.height = '100%'; vid.style.objectFit = 'cover';
+                this.bgCurrent.appendChild(vid);
+            } else if (scene.type === 'image') {
                 this.bgCurrent.style.backgroundImage = `url('${scene.value}')`;
-                this.bgCurrent.style.background = '';
                 this.bgCurrent.style.backgroundSize = 'cover';
                 this.bgCurrent.style.backgroundPosition = 'center';
-                this.bgCurrent.classList.remove('animated-gradient');
             } else {
-                this.bgCurrent.style.backgroundImage = '';
                 this.bgCurrent.style.background = scene.value;
                 this.bgCurrent.classList.add('animated-gradient');
             }
             this.bgNext.style.opacity = '0';
+            setTimeout(() => { this.bgNext.innerHTML = ''; }, 1200);
         }, 1300);
 
         this.currentScene = scene.id;
     }
 
-    addCustomScene(name, dataUrl) {
+    addCustomScene(name, value, type = 'image') {
         const id = 'custom-' + Date.now();
-        const scene = { id, name, type: 'image', value: dataUrl, custom: true };
+        const scene = { id, name, type, value, custom: true };
         this.customScenes.push(scene);
         this._saveCustomScenes();
         return scene;
     }
 
-    removeCustomScene(id) {
+    async removeCustomScene(id) {
+        const scene = this.customScenes.find(s => s.id === id);
+        if (scene && scene.type === 'video' && scene.value.startsWith('indexeddb://')) {
+            const fileId = scene.value.replace('indexeddb://', '');
+            await this.dbManager.deleteFile(fileId);
+        }
         this.customScenes = this.customScenes.filter(s => s.id !== id);
         this._saveCustomScenes();
     }
@@ -348,9 +435,19 @@ class BackgroundManager {
         return [...SCENES_CONFIG, ...this.customScenes];
     }
 
-    _loadCustomScenes() {
+    async _loadCustomScenes() {
         try {
-            return JSON.parse(localStorage.getItem('ff-custom-scenes') || '[]');
+            const scenes = JSON.parse(localStorage.getItem('ff-custom-scenes') || '[]');
+            for (const scene of scenes) {
+                if (scene.type === 'video' && scene.value.startsWith('indexeddb://')) {
+                    const id = scene.value.replace('indexeddb://', '');
+                    const file = await this.dbManager.getFile(id);
+                    if (file) {
+                        scene.blobUrl = URL.createObjectURL(file);
+                    }
+                }
+            }
+            return scenes;
         } catch {
             return [];
         }
@@ -371,7 +468,8 @@ class BackgroundManager {
 class App {
     constructor() {
         this.soundEngine = new SoundEngine();
-        this.bgManager = new BackgroundManager();
+        this.dbManager = new DBManager();
+        this.bgManager = new BackgroundManager(this.dbManager);
         this.settings = this._loadSettings();
         this.currentMode = 'focus'; // focus | short-break | long-break
         this.completedSessions = 0;
@@ -381,11 +479,12 @@ class App {
             (remaining, duration) => this._onTimerTick(remaining, duration),
             () => this._onTimerComplete()
         );
-
-        this._init();
     }
 
-    _init() {
+    async _init() {
+        await this.dbManager.init();
+        await this.bgManager.init();
+
         this._applySettings();
         this._bindEvents();
         this._renderSounds();
@@ -431,17 +530,22 @@ class App {
         this.timer.setDuration(this.settings.focusDuration);
 
         // Settings UI
-        const setRange = (id, val, suffix = ' min') => {
+        const setRange = (id, val) => {
             const range = document.getElementById(`range-${id}`);
-            const display = document.getElementById(`val-${id}`);
+            const input = document.getElementById(`input-${id}`);
             if (range) range.value = val;
-            if (display) display.textContent = val + suffix;
+            if (input) input.value = val;
         };
 
         setRange('focus', this.settings.focusDuration);
         setRange('short-break', this.settings.shortBreakDuration);
         setRange('long-break', this.settings.longBreakDuration);
-        setRange('sessions', this.settings.sessionsBeforeLongBreak, '');
+        setRange('sessions', this.settings.sessionsBeforeLongBreak);
+        setRange('ui-opacity', this.settings.uiOpacity);
+        setRange('ui-blur', this.settings.uiBlur);
+        setRange('bg-dimming', this.settings.bgDimming);
+
+        this._applyUiStyles();
 
         const setToggle = (id, val) => {
             const el = document.getElementById(`toggle-${id}`);
@@ -451,6 +555,11 @@ class App {
         setToggle('auto-break', this.settings.autoStartBreak);
         setToggle('auto-focus', this.settings.autoStartFocus);
         setToggle('notification', this.settings.notificationSound);
+        setToggle('hide-nav', this.settings.autoHideNav);
+        setToggle('fullscreen', document.fullscreenElement != null);
+        setToggle('minimal-mode', this.settings.minimalMode);
+
+        document.getElementById('bottom-nav').classList.toggle('auto-hide-enabled', this.settings.autoHideNav);
 
         // Master volume
         const mv = document.getElementById('master-volume');
@@ -458,7 +567,44 @@ class App {
         this.soundEngine.setMasterVolume(this.settings.masterVolume / 100);
     }
 
+    _applyUiStyles() {
+        const opacityRatio = this.settings.uiOpacity / 100;
+        
+        // Compute new opacities based on baselines
+        const cardAlpha = 0.65 * opacityRatio;
+        const navAlpha = 0.7 * opacityRatio;
+        const panelAlpha = 0.95 * opacityRatio;
+
+        document.documentElement.style.setProperty('--ui-opacity-card', cardAlpha);
+        document.documentElement.style.setProperty('--ui-opacity-nav', navAlpha);
+        document.documentElement.style.setProperty('--ui-opacity-panel', panelAlpha);
+
+        // Compute text shadow for clarity at lower opacities
+        const shadowStrength = 1 - opacityRatio;
+        if (shadowStrength > 0.05) {
+            document.documentElement.style.setProperty('--global-text-shadow', `0 1px ${2 + shadowStrength * 4}px rgba(0,0,0, ${shadowStrength * 0.9})`);
+            document.documentElement.style.setProperty('--timer-text-shadow', `0 2px ${20 + shadowStrength * 10}px rgba(0, 0, 0, ${0.3 + shadowStrength * 0.7})`);
+        } else {
+            document.documentElement.style.setProperty('--global-text-shadow', 'none');
+            document.documentElement.style.setProperty('--timer-text-shadow', '0 2px 20px rgba(0, 0, 0, 0.3)');
+        }
+
+        // Glass Blur
+        document.documentElement.style.setProperty('--ui-blur', `${this.settings.uiBlur}px`);
+
+        // Background Dimming
+        document.documentElement.style.setProperty('--bg-dimming', this.settings.bgDimming / 100);
+
+        // Minimal Mode
+        document.body.classList.toggle('minimal-mode-active', this.settings.minimalMode);
+    }
+
     _bindEvents() {
+        // Timer click
+        document.getElementById('timer-ring-wrapper').addEventListener('click', () => {
+            document.getElementById('btn-start').click();
+        });
+
         // Start / Pause
         document.getElementById('btn-start').addEventListener('click', () => {
             if (this.timer.running) {
@@ -514,20 +660,27 @@ class App {
 
         // Settings ranges
         const rangeBindings = [
-            { id: 'focus', key: 'focusDuration', suffix: ' min' },
-            { id: 'short-break', key: 'shortBreakDuration', suffix: ' min' },
-            { id: 'long-break', key: 'longBreakDuration', suffix: ' min' },
-            { id: 'sessions', key: 'sessionsBeforeLongBreak', suffix: '' },
+            { id: 'focus', key: 'focusDuration' },
+            { id: 'short-break', key: 'shortBreakDuration' },
+            { id: 'long-break', key: 'longBreakDuration' },
+            { id: 'sessions', key: 'sessionsBeforeLongBreak' },
+            { id: 'ui-opacity', key: 'uiOpacity' },
+            { id: 'ui-blur', key: 'uiBlur' },
+            { id: 'bg-dimming', key: 'bgDimming' },
         ];
 
-        rangeBindings.forEach(({ id, key, suffix }) => {
+        rangeBindings.forEach(({ id, key }) => {
             const range = document.getElementById(`range-${id}`);
-            if (!range) return;
-            range.addEventListener('input', () => {
-                const val = parseInt(range.value);
+            const input = document.getElementById(`input-${id}`);
+            if (!range || !input) return;
+
+            const updateSetting = (val) => {
                 this.settings[key] = val;
-                document.getElementById(`val-${id}`).textContent = val + suffix;
                 this._saveSettings();
+
+                if (['uiOpacity', 'uiBlur', 'bgDimming'].includes(key)) {
+                    this._applyUiStyles();
+                }
 
                 // Update timer if matching current mode
                 if (id === 'focus' && this.currentMode === 'focus' && !this.timer.running) {
@@ -541,6 +694,21 @@ class App {
                 if (id === 'sessions') {
                     this._renderSessionDots();
                 }
+            };
+
+            range.addEventListener('input', () => {
+                const val = parseInt(range.value);
+                input.value = val;
+                updateSetting(val);
+            });
+
+            input.addEventListener('change', () => {
+                let val = parseInt(input.value);
+                if (isNaN(val) || val < parseInt(input.min)) val = parseInt(input.min);
+                if (val > parseInt(input.max)) val = parseInt(input.max);
+                input.value = val;
+                range.value = val;
+                updateSetting(val);
             });
         });
 
@@ -549,6 +717,8 @@ class App {
             { id: 'auto-break', key: 'autoStartBreak' },
             { id: 'auto-focus', key: 'autoStartFocus' },
             { id: 'notification', key: 'notificationSound' },
+            { id: 'hide-nav', key: 'autoHideNav' },
+            { id: 'minimal-mode', key: 'minimalMode' },
         ];
 
         toggleBindings.forEach(({ id, key }) => {
@@ -557,8 +727,35 @@ class App {
             el.addEventListener('change', () => {
                 this.settings[key] = el.checked;
                 this._saveSettings();
+
+                if (key === 'autoHideNav') {
+                    document.getElementById('bottom-nav').classList.toggle('auto-hide-enabled', el.checked);
+                } else if (key === 'minimalMode') {
+                    this._applyUiStyles();
+                }
             });
         });
+
+        // Fullscreen Toggle
+        const fsToggle = document.getElementById('toggle-fullscreen');
+        if (fsToggle) {
+            fsToggle.addEventListener('change', () => {
+                if (fsToggle.checked) {
+                    document.documentElement.requestFullscreen().catch(e => {
+                        console.warn('Fullscreen failed:', e);
+                        fsToggle.checked = false;
+                    });
+                } else {
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    }
+                }
+            });
+
+            document.addEventListener('fullscreenchange', () => {
+                fsToggle.checked = (document.fullscreenElement != null);
+            });
+        }
 
         // Master volume
         document.getElementById('master-volume').addEventListener('input', (e) => {
@@ -573,15 +770,33 @@ class App {
             document.getElementById('bg-file-input').click();
         });
 
-        document.getElementById('bg-file-input').addEventListener('change', (e) => {
+        document.getElementById('bg-file-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+
+            const isVideo = file.type.startsWith('video/');
+            const name = file.name.replace(/\.[^.]+$/, '');
+
+            if (isVideo) {
+                const fileId = 'video-' + Date.now();
+                await this.dbManager.saveFile(fileId, file);
+
+                const dbUrl = 'indexeddb://' + fileId;
+                const scene = this.bgManager.addCustomScene(name, dbUrl, 'video');
+                scene.blobUrl = URL.createObjectURL(file);
+
+                this.bgManager.setScene(scene);
+                this.settings.activeScene = scene.id;
+                this._saveSettings();
+                this._renderScenes();
+                e.target.value = '';
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = (ev) => {
                 const dataUrl = ev.target.result;
-                const name = file.name.replace(/\.[^.]+$/, '');
-                const scene = this.bgManager.addCustomScene(name, dataUrl);
+                const scene = this.bgManager.addCustomScene(name, dataUrl, 'image');
                 this.bgManager.setScene(scene);
                 this.settings.activeScene = scene.id;
                 this._saveSettings();
@@ -621,7 +836,8 @@ class App {
         // Update page title
         const m = String(Math.floor(remaining / 60)).padStart(2, '0');
         const s = String(remaining % 60).padStart(2, '0');
-        document.title = `${m}:${s} — Focusflow`;
+        const emoji = this.currentMode === 'focus' ? '🍅' : '☕';
+        document.title = `${emoji} ${m}:${s} — Focusflow`;
     }
 
     _onTimerComplete() {
@@ -835,6 +1051,12 @@ class App {
             thumb.className = 'scene-thumb';
             if (scene.type === 'image') {
                 thumb.style.backgroundImage = `url('${scene.value}')`;
+            } else if (scene.type === 'video') {
+                const vid = document.createElement('video');
+                vid.src = scene.value;
+                vid.muted = true; vid.loop = true; vid.autoplay = true; vid.playsInline = true;
+                vid.style.width = '100%'; vid.style.height = '100%'; vid.style.objectFit = 'cover';
+                thumb.appendChild(vid);
             } else {
                 thumb.style.background = scene.value;
             }
@@ -852,9 +1074,9 @@ class App {
                 removeBtn.className = 'scene-remove';
                 removeBtn.innerHTML = '×';
                 removeBtn.title = 'Remove';
-                removeBtn.addEventListener('click', (e) => {
+                removeBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    this.bgManager.removeCustomScene(scene.id);
+                    await this.bgManager.removeCustomScene(scene.id);
                     if (this.settings.activeScene === scene.id) {
                         this.settings.activeScene = 'minimal-dark';
                         this.bgManager.setScene(SCENES_CONFIG[0]);
@@ -909,6 +1131,7 @@ class App {
 // ============================================================
 // Initialize
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     window.app = new App();
+    await window.app._init();
 });
