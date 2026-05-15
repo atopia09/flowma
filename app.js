@@ -371,8 +371,10 @@ class BackgroundManager {
             const vid = document.createElement('video');
             vid.src = scene.blobUrl || scene.value;
             vid.autoplay = true; vid.loop = true; vid.muted = true; vid.playsInline = true;
+            vid.setAttribute('autoplay', ''); vid.setAttribute('loop', ''); vid.setAttribute('muted', ''); vid.setAttribute('playsinline', '');
             vid.style.width = '100%'; vid.style.height = '100%'; vid.style.objectFit = 'cover';
             this.bgNext.appendChild(vid);
+            vid.play().catch(e => console.warn('Video autoplay failed', e));
         } else if (scene.type === 'image') {
             this.bgNext.style.backgroundImage = `url('${scene.value}')`;
             this.bgNext.style.backgroundSize = 'cover';
@@ -396,8 +398,10 @@ class BackgroundManager {
                 const vid = document.createElement('video');
                 vid.src = scene.blobUrl || scene.value;
                 vid.autoplay = true; vid.loop = true; vid.muted = true; vid.playsInline = true;
+                vid.setAttribute('autoplay', ''); vid.setAttribute('loop', ''); vid.setAttribute('muted', ''); vid.setAttribute('playsinline', '');
                 vid.style.width = '100%'; vid.style.height = '100%'; vid.style.objectFit = 'cover';
                 this.bgCurrent.appendChild(vid);
+                vid.play().catch(e => console.warn('Video autoplay failed', e));
             } else if (scene.type === 'image') {
                 this.bgCurrent.style.backgroundImage = `url('${scene.value}')`;
                 this.bgCurrent.style.backgroundSize = 'cover';
@@ -423,7 +427,7 @@ class BackgroundManager {
 
     async removeCustomScene(id) {
         const scene = this.customScenes.find(s => s.id === id);
-        if (scene && scene.type === 'video' && scene.value.startsWith('indexeddb://')) {
+        if (scene && scene.value && scene.value.startsWith('indexeddb://')) {
             const fileId = scene.value.replace('indexeddb://', '');
             await this.dbManager.deleteFile(fileId);
         }
@@ -439,7 +443,7 @@ class BackgroundManager {
         try {
             const scenes = JSON.parse(localStorage.getItem('ff-custom-scenes') || '[]');
             for (const scene of scenes) {
-                if (scene.type === 'video' && scene.value.startsWith('indexeddb://')) {
+                if (scene.value && scene.value.startsWith('indexeddb://')) {
                     const id = scene.value.replace('indexeddb://', '');
                     const file = await this.dbManager.getFile(id);
                     if (file) {
@@ -658,6 +662,44 @@ class App {
             document.getElementById('nav-timer').classList.add('active');
         });
 
+        // Panel swipe to close
+        const panelHandle = document.getElementById('panel-handle');
+        const panelContainer = document.getElementById('panel-container');
+        let startY = 0;
+        let currentY = 0;
+        let isDragging = false;
+
+        panelHandle.addEventListener('touchstart', (e) => {
+            startY = e.touches[0].clientY;
+            isDragging = true;
+            panelContainer.style.transition = 'none';
+        }, { passive: true });
+
+        panelHandle.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const y = e.touches[0].clientY;
+            const deltaY = y - startY;
+            if (deltaY > 0) {
+                if (e.cancelable) e.preventDefault();
+                currentY = deltaY;
+                panelContainer.style.transform = `translateY(${deltaY}px)`;
+            }
+        }, { passive: false });
+
+        panelHandle.addEventListener('touchend', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            panelContainer.style.transition = ''; 
+            panelContainer.style.transform = ''; 
+
+            if (currentY > 60) {
+                this._closePanel();
+                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+                document.getElementById('nav-timer').classList.add('active');
+            }
+            currentY = 0;
+        });
+
         // Settings ranges
         const rangeBindings = [
             { id: 'focus', key: 'focusDuration' },
@@ -774,36 +816,56 @@ class App {
             const file = e.target.files[0];
             if (!file) return;
 
-            const isVideo = file.type.startsWith('video/');
-            const name = file.name.replace(/\.[^.]+$/, '');
+            const uploadBtn = document.getElementById('btn-upload-bg');
+            const originalText = uploadBtn.innerHTML;
+            uploadBtn.innerHTML = '<span>Processing...</span>';
+            uploadBtn.style.pointerEvents = 'none';
+            uploadBtn.style.opacity = '0.7';
 
-            if (isVideo) {
-                const fileId = 'video-' + Date.now();
-                await this.dbManager.saveFile(fileId, file);
+            try {
+                // Better video detection
+                const isVideoExt = /\.(mp4|webm|ogg|mov|mkv)$/i.test(file.name);
+                const isVideo = file.type.startsWith('video/') || isVideoExt;
+                
+                // If it's a GIF or large image, store in IndexedDB to avoid localStorage quota
+                const isLargeFile = file.size > 2 * 1024 * 1024; // > 2MB
+                const name = file.name.replace(/\.[^.]+$/, '');
 
-                const dbUrl = 'indexeddb://' + fileId;
-                const scene = this.bgManager.addCustomScene(name, dbUrl, 'video');
-                scene.blobUrl = URL.createObjectURL(file);
+                if (isVideo || isLargeFile || file.name.toLowerCase().endsWith('.gif')) {
+                    const fileId = 'media-' + Date.now();
+                    await this.dbManager.saveFile(fileId, file);
 
-                this.bgManager.setScene(scene);
-                this.settings.activeScene = scene.id;
-                this._saveSettings();
-                this._renderScenes();
+                    const dbUrl = 'indexeddb://' + fileId;
+                    const type = isVideo ? 'video' : 'image';
+                    const scene = this.bgManager.addCustomScene(name, dbUrl, type);
+                    scene.blobUrl = URL.createObjectURL(file);
+
+                    this.bgManager.setScene(scene);
+                    this.settings.activeScene = scene.id;
+                    this._saveSettings();
+                    this._renderScenes();
+                } else {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const dataUrl = ev.target.result;
+                        const scene = this.bgManager.addCustomScene(name, dataUrl, 'image');
+                        this.bgManager.setScene(scene);
+                        this.settings.activeScene = scene.id;
+                        this._saveSettings();
+                        this._renderScenes();
+                    };
+                    reader.onerror = () => { throw new Error('Failed to read file'); };
+                    reader.readAsDataURL(file);
+                }
+            } catch (err) {
+                console.error("Upload failed:", err);
+                alert("Failed to load background. It might be too large or an unsupported format.");
+            } finally {
+                uploadBtn.innerHTML = originalText;
+                uploadBtn.style.pointerEvents = 'all';
+                uploadBtn.style.opacity = '1';
                 e.target.value = '';
-                return;
             }
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const dataUrl = ev.target.result;
-                const scene = this.bgManager.addCustomScene(name, dataUrl, 'image');
-                this.bgManager.setScene(scene);
-                this.settings.activeScene = scene.id;
-                this._saveSettings();
-                this._renderScenes();
-            };
-            reader.readAsDataURL(file);
-            e.target.value = '';
         });
 
         // Tab indicator resize on window resize
@@ -1055,8 +1117,10 @@ class App {
                 const vid = document.createElement('video');
                 vid.src = scene.value;
                 vid.muted = true; vid.loop = true; vid.autoplay = true; vid.playsInline = true;
+                vid.setAttribute('autoplay', ''); vid.setAttribute('loop', ''); vid.setAttribute('muted', ''); vid.setAttribute('playsinline', '');
                 vid.style.width = '100%'; vid.style.height = '100%'; vid.style.objectFit = 'cover';
                 thumb.appendChild(vid);
+                vid.play().catch(e => console.warn('Video autoplay failed', e));
             } else {
                 thumb.style.background = scene.value;
             }
