@@ -1,5 +1,5 @@
 // ============================================================
-// Focusflow — Pomodoro Timer App
+// Flowma — Pomodoro Timer App
 // ============================================================
 
 // ===== Configuration =====
@@ -10,6 +10,12 @@ const SOUNDS_CONFIG = [
     { id: 'wind', name: 'Wind', emoji: '💨' },
     { id: 'fire', name: 'Fireplace', emoji: '🔥' },
     { id: 'night', name: 'Night', emoji: '🌙' },
+    { id: 'white-noise', name: 'White Noise', emoji: '📻' },
+    { id: 'brown-noise', name: 'Brown Noise', emoji: '🟤' },
+    { id: 'pink-noise', name: 'Pink Noise', emoji: '🩷' },
+    { id: 'birds', name: 'Birds', emoji: '🐦' },
+    { id: 'forest', name: 'Forest', emoji: '🌲' },
+    { id: 'river', name: 'River', emoji: '🏞️' },
 ];
 
 const SCENES_CONFIG = [
@@ -80,7 +86,7 @@ const DEFAULT_SETTINGS = {
 // ============================================================
 class DBManager {
     constructor() {
-        this.dbName = 'focusflow-db';
+        this.dbName = 'flowma-db';
         this.dbVersion = 1;
         this.storeName = 'files';
         this.db = null;
@@ -155,6 +161,12 @@ class SoundEngine {
             wind: 'sounds/wind.mp3',
             fire: 'sounds/fire.mp3',
             night: 'sounds/night.mp3',
+            'white-noise': 'sounds/white-noise.wav',
+            'brown-noise': 'sounds/brown-noise.wav',
+            'pink-noise': 'sounds/pink-noise.wav',
+            birds: 'sounds/birds.mp3',
+            forest: 'sounds/forest.mp3',
+            river: 'sounds/river.mp3',
         };
     }
 
@@ -183,32 +195,70 @@ class SoundEngine {
         // Preload the audio file to ensure it's ready immediately
         audioEl.preload = "auto";
         
-        const source = this.ctx.createMediaElementSource(audioEl);
-        const gainNode = this.ctx.createGain();
-        gainNode.gain.value = 0; // Start silent
+        // Web Audio API createMediaElementSource blocked on file:// protocol in Chrome.
+        // If we are on file://, just use standard HTML5 audio element API.
+        const isLocalFile = window.location.protocol === 'file:';
 
-        source.connect(gainNode);
-        gainNode.connect(this.masterGain);
+        let gainNode = null;
+        if (!isLocalFile) {
+            const source = this.ctx.createMediaElementSource(audioEl);
+            gainNode = this.ctx.createGain();
+            gainNode.gain.value = 0; // Start silent
+
+            source.connect(gainNode);
+            gainNode.connect(this.masterGain);
+        }
 
         return {
             element: audioEl,
             gainNode,
             isActive: false,
             setVolume: (vol) => {
-                const t = this.ctx.currentTime;
-                gainNode.gain.cancelScheduledValues(t);
-                gainNode.gain.setTargetAtTime(vol, t, 0.08);
+                if (isLocalFile) {
+                    audioEl.volume = vol * this.masterGain.gain.value;
+                } else if (gainNode) {
+                    const t = this.ctx.currentTime;
+                    gainNode.gain.cancelScheduledValues(t);
+                    gainNode.gain.setTargetAtTime(vol, t, 0.08);
+                }
             },
             start: () => {
-                audioEl.play().catch(e => console.warn('Audio play failed', e));
+                if (isLocalFile) {
+                    audioEl.volume = 0;
+                    audioEl.play().then(() => {
+                        // Simple fade-in simulation
+                        let v = 0;
+                        const fade = setInterval(() => {
+                            v += 0.1;
+                            if (v >= 1) { v = 1; clearInterval(fade); }
+                            audioEl.volume = v * this.masterGain.gain.value;
+                        }, 50);
+                    }).catch(e => console.warn('Audio play failed', e));
+                } else {
+                    audioEl.play().catch(e => console.warn('Audio play failed', e));
+                }
             },
             stop: () => {
-                const t = this.ctx.currentTime;
-                gainNode.gain.cancelScheduledValues(t);
-                gainNode.gain.setTargetAtTime(0, t, 0.3);
-                setTimeout(() => {
-                    audioEl.pause();
-                }, 350);
+                if (isLocalFile) {
+                    // Simple fade-out simulation
+                    let v = audioEl.volume / this.masterGain.gain.value;
+                    const fade = setInterval(() => {
+                        v -= 0.1;
+                        if (v <= 0) {
+                            v = 0;
+                            clearInterval(fade);
+                            audioEl.pause();
+                        }
+                        audioEl.volume = v * this.masterGain.gain.value;
+                    }, 50);
+                } else if (gainNode) {
+                    const t = this.ctx.currentTime;
+                    gainNode.gain.cancelScheduledValues(t);
+                    gainNode.gain.setTargetAtTime(0, t, 0.3);
+                    setTimeout(() => {
+                        audioEl.pause();
+                    }, 350);
+                }
             }
         };
     }
@@ -478,6 +528,7 @@ class App {
         this.currentMode = 'focus'; // focus | short-break | long-break
         this.completedSessions = 0;
         this.activePanel = null;
+        this.widgetManager = new WidgetManager(this);
 
         this.timer = new Timer(
             (remaining, duration) => this._onTimerTick(remaining, duration),
@@ -497,6 +548,7 @@ class App {
         this._updateTimerDisplay(this.timer.remaining, this.timer.duration);
         this._updateProgressRing(0);
         this._positionTabIndicator();
+        this.widgetManager.init();
 
         // Apply saved scene
         const allScenes = this.bgManager.getAllScenes();
@@ -646,7 +698,17 @@ class App {
                 const panel = btn.dataset.panel;
                 if (panel === 'timer') {
                     this._closePanel();
+                    this.widgetManager.closeSidebar();
+                } else if (panel === 'widgets') {
+                    this._closePanel();
+                    this.widgetManager.toggleSidebar();
+                    if (!document.getElementById('widget-sidebar').classList.contains('open')) {
+                        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+                        document.getElementById('nav-timer').classList.add('active');
+                        return;
+                    }
                 } else {
+                    this.widgetManager.closeSidebar();
                     this._openPanel(panel);
                 }
 
@@ -774,6 +836,16 @@ class App {
                     document.getElementById('bottom-nav').classList.toggle('auto-hide-enabled', el.checked);
                 } else if (key === 'minimalMode') {
                     this._applyUiStyles();
+                    const hint = document.getElementById('minimal-mode-hint');
+                    if (hint) {
+                        hint.classList.toggle('hidden', !el.checked);
+                        if (el.checked) {
+                            if (this.minimalModeHintTimeout) clearTimeout(this.minimalModeHintTimeout);
+                            this.minimalModeHintTimeout = setTimeout(() => {
+                                hint.classList.add('hidden');
+                            }, 3500);
+                        }
+                    }
                 }
             });
         });
@@ -877,10 +949,27 @@ class App {
                 e.preventDefault();
                 document.getElementById('btn-start').click();
             }
-            if (e.code === 'Escape' && this.activePanel) {
-                this._closePanel();
-                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-                document.getElementById('nav-timer').classList.add('active');
+            if (e.code === 'Escape') {
+                let closed = false;
+                if (this.activePanel) {
+                    this._closePanel();
+                    closed = true;
+                }
+                if (document.getElementById('widget-sidebar').classList.contains('open')) {
+                    this.widgetManager.closeSidebar();
+                    closed = true;
+                }
+                if (closed) {
+                    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+                    document.getElementById('nav-timer').classList.add('active');
+                }
+            }
+            if (e.code === 'KeyM' && !this._isInputFocused()) {
+                const toggle = document.getElementById('toggle-minimal-mode');
+                if (toggle) {
+                    toggle.checked = !toggle.checked;
+                    toggle.dispatchEvent(new Event('change'));
+                }
             }
         });
     }
@@ -899,7 +988,7 @@ class App {
         const m = String(Math.floor(remaining / 60)).padStart(2, '0');
         const s = String(remaining % 60).padStart(2, '0');
         const emoji = this.currentMode === 'focus' ? '🍅' : '☕';
-        document.title = `${emoji} ${m}:${s} — Focusflow`;
+        document.title = `${emoji} ${m}:${s} — Flowma`;
     }
 
     _onTimerComplete() {
@@ -921,6 +1010,7 @@ class App {
         if (this.currentMode === 'focus') {
             this.completedSessions++;
             this._renderSessionDots();
+            this.widgetManager.updatePomodoroCounters();
 
             if (this.completedSessions >= this.settings.sessionsBeforeLongBreak) {
                 this.completedSessions = 0;

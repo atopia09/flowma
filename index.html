@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Focusflow — Pomodoro Timer</title>
-    <meta name="description" content="A minimal, beautiful Pomodoro timer with ambient sounds and customizable backgrounds.">
+    <title>Flowma — Focus Timer & Ambient Workspace</title>
+    <meta name="description" content="Flowma is your personal focus companion — a beautiful Pomodoro timer with ambient soundscapes, immersive backgrounds, and customizable widgets to help you flow into deep work.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="widgets.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
 </head>
 <body>
@@ -18,6 +19,16 @@
         <div id="bg-next" class="bg-layer"></div>
         <div id="bg-overlay" class="bg-layer"></div>
     </div>
+
+    <!-- Widget Area -->
+    <div id="widget-area"></div>
+
+    <!-- Snap Guidelines -->
+    <div id="snap-guide-h" class="snap-guide snap-guide-h"></div>
+    <div id="snap-guide-v" class="snap-guide snap-guide-v"></div>
+
+    <!-- Minimal Mode Hint -->
+    <div id="minimal-mode-hint" class="minimal-mode-hint hidden">Press <kbd>M</kbd> to exit minimal mode</div>
 
     <!-- Main App -->
     <div id="app">
@@ -104,6 +115,15 @@
                     <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
                 </svg>
                 <span>Scenes</span>
+            </button>
+            <button class="nav-btn" data-panel="widgets" id="nav-widgets" aria-label="Widgets">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+                    <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                </svg>
+                <span>Widgets</span>
             </button>
             <button class="nav-btn" data-panel="settings" id="nav-settings" aria-label="Settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -274,6 +294,22 @@
         </div>
     </div>
 
+    <!-- Widget Sidebar -->
+    <div id="widget-sidebar" class="widget-sidebar">
+        <div class="widget-sidebar-header">
+            <h2>Widgets</h2>
+            <button class="widget-sidebar-close" id="widget-sidebar-close" aria-label="Close sidebar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <p class="widget-sidebar-hint">Drag a widget to place it on your workspace</p>
+        <div class="widget-catalog-grid"></div>
+    </div>
+
+    <script src="widgets.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
