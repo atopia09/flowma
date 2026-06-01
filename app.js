@@ -161,12 +161,12 @@ class SoundEngine {
             wind: 'sounds/wind.mp3',
             fire: 'sounds/fire.mp3',
             night: 'sounds/night.mp3',
-            'white-noise': 'sounds/white-noise.wav',
-            'brown-noise': 'sounds/brown-noise.wav',
-            'pink-noise': 'sounds/pink-noise.wav',
-            birds: 'sounds/birds.mp3',
+            'white-noise': 'sounds2/white-noise.wav',
+            'brown-noise': 'sounds2/brown-noise.wav',
+            'pink-noise': 'sounds2/pink-noise.wav',
+            birds: 'sounds2/birds.mp3',
             forest: 'sounds/forest.mp3',
-            river: 'sounds/river.mp3',
+            river: 'sounds2/river.mp3',
         };
     }
 
